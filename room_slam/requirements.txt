@@ -1,0 +1,10 @@
+# Core - everything you need to record and build maps
+numpy>=1.24,<3
+scipy>=1.10            # fast nearest neighbour search for scan matching
+matplotlib>=3.6        # only used to draw the PNG map
+pyserial>=3.5          # only if you record over USB instead of WiFi
+
+# Pose graph optimisation with g2o.
+# NOTE: the current g2o-python wheels are built against numpy 1.x and crash
+# with numpy 2.x.  If `import g2o` segfaults, install numpy<2.
+g2o-python>=0.0.12

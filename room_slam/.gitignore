@@ -1,0 +1,19 @@
+# recordings and generated maps are data, not source
+data/*.db
+data/*.db-wal
+data/*.db-shm
+maps/*.png
+maps/*.g2o
+maps/*.npz
+maps/live/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ESP32 / Arduino
+firmware/**/.pio/
+firmware/**/build/
+*.bin
