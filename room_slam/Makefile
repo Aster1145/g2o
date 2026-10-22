@@ -2,10 +2,11 @@
 # Everything here assumes the virtualenv in .venv (see docs/STEP_BY_STEP_GUIDE.md).
 
 PY      ?= .venv/bin/python
+PORT    ?= COM8
 DB      ?= data/room.db
 NAME    ?= room
 
-.PHONY: help install demo record map live check replay test test-cpp clean
+.PHONY: help install demo record map live check replay test test-cpp clean usb usb-check
 
 help:
 	@echo "make install   install the python dependencies into .venv"
@@ -14,6 +15,8 @@ help:
 	@echo "make live      record + rebuild the map every 60 sweeps"
 	@echo "make map       build the map from $(DB)"
 	@echo "make check     print live stream stats / ascii view"
+	@echo "make usb       record from a USB lidar (PORT=COM8)"
+	@echo "make usb-check look at the USB lidar only, no recording"
 	@echo "make test      run the python unit tests"
 	@echo "make test-cpp  compile and run the lidar parser test"
 
@@ -38,6 +41,12 @@ map:
 
 check:
 	$(PY) -m slam2d.check_stream --seconds 15
+
+usb:
+	$(PY) -m slam2d.record_lidar_usb --port $(PORT) --db $(DB)
+
+usb-check:
+	$(PY) -m slam2d.record_lidar_usb --port $(PORT) --preview
 
 replay:
 	$(PY) -m slam2d.replay --db data/demo.db --host 127.0.0.1

@@ -15,12 +15,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-serial = ["pyserial>=3.5"]
+serial = ["pyserial>=3.5", "rplidar>=0.9.2"]
 g2o = ["g2o-python>=0.0.12"]
 dev = ["pytest>=7"]
 
 [project.scripts]
 room-slam-record = "slam2d.record:main"
+room-slam-usb = "slam2d.record_lidar_usb:main"
 room-slam-map = "slam2d.run_slam:main"
 room-slam-demo = "slam2d.simulate_room:main"
 room-slam-replay = "slam2d.replay:main"

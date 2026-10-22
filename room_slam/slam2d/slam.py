@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config, graph, occupancy_map
+from .likelihood import LikelihoodField, search_poses
 from .db import Scan, connect, fetch_odom, fetch_scans
 from .geometry import (angle_diff, heading, inverse, normalize_angle, relative,
                        se2, transform_points, translation)
@@ -75,6 +76,14 @@ def _odom_lookup(odom, stamp: float):
                a0 + w * normalize_angle(a1 - a0))
 
 
+def _mat_pow(T: np.ndarray, n: int) -> np.ndarray:
+    """T composed with itself n times (constant-velocity extrapolation)."""
+    out = np.eye(3)
+    for _ in range(max(1, min(int(n), 3))):
+        out = out @ T
+    return out
+
+
 def _crop(cloud: np.ndarray, centre: np.ndarray, radius: float) -> np.ndarray:
     if len(cloud) == 0:
         return cloud
@@ -93,7 +102,7 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
              max_scans: int | None = None, loop_closure: bool = True,
              optimize_graph: bool = True, backend: str = "auto",
              verbose: bool = True, lidar_offsets: np.ndarray | None = None,
-             progress=None) -> SlamResult:
+             search: bool = True, progress=None) -> SlamResult:
     """Run the full pipeline on the scans stored in ``db_path``."""
     t_start = time.time()
     conn = connect(db_path, read_only=True)
@@ -113,7 +122,11 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
     keys_clouds: list[np.ndarray] = []           # their points in world frame
     edges: list[graph.Edge] = []
     loops: list[tuple[int, int, float]] = []
-    last_motion = np.eye(3)
+    # constant-velocity model, kept per *sweep* (keyframes are further apart)
+    pose_track = np.eye(3)
+    motion_per_scan = np.eye(3)
+    skipped = 0
+    field_cache: dict = {"key": None, "field": None}
 
     def report(msg):
         if verbose:
@@ -135,7 +148,8 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
             break
 
         # --- predict the new pose -------------------------------------
-        T_guess = poses[-1] @ last_motion
+        # from the last accepted sweep, extrapolated over rejected ones
+        T_guess = pose_track @ _mat_pow(motion_per_scan, skipped + 1)
         odom_pose = _odom_lookup(odom, scan.stamp) if odom else None
         if odom_pose is not None and len(keys) >= 2:
             # odometry gives us the incremental motion since the previous scan
@@ -158,18 +172,41 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
         submap = np.vstack([_crop(c, centre, config.SUBMAP_RADIUS_M)
                             for c in keys_clouds[-config.SUBMAP_NUM_KEYFRAMES:]])
         if len(submap) < 50:
+            motion_per_scan = inverse(pose_track) @ T_guess
+            pose_track = T_guess
+            skipped = 0
             poses.append(T_guess)
-            last_motion = inverse(poses[-2]) @ T_guess
             continue
 
-        # start the alignment at the odometry prediction: ICP only has to
-        # polish the small error that is left
-        result = icp(pts_match, submap, T_init=T_guess)
-        T_new = result.transform
+        # Without odometry the prediction is just "keep the last velocity",
+        # which is not trustworthy.  Search the map instead of trusting it.
+        use_search = (not odom) and search and config.USE_SEARCH_WHEN_NO_ODOM
+        field = None
+        if use_search:
+            cache_key = len(keys_clouds)
+            if field_cache["key"] != cache_key:
+                field_cache["key"] = cache_key
+                field_cache["field"] = LikelihoodField.from_points(
+                    np.vstack(keys_clouds[-config.SUBMAP_NUM_KEYFRAMES:]),
+                    padding=config.SEARCH_WINDOW_XY_M + 0.5)
+            field = field_cache["field"]
+            if field is None:
+                use_search = False
 
-        ok, why = _accept_match(result, T_guess, T_new)
+        if use_search:
+            result, T_new = _match_with_search(pts_match, submap, field, T_guess)
+        else:
+            # start the alignment at the odometry prediction: ICP only has to
+            # polish the small error that is left
+            result = icp(pts_match, submap, T_init=T_guess)
+            T_new = result.transform
+
+        gate = 2.0 if use_search else None
+        ok, why = _accept_match(result, T_guess, T_new,
+                                max_correction=gate)
         if not ok:
             n_rejected += 1
+            skipped += 1
             if k % 10 == 0:
                 report(f"  scan {k:4d}: match rejected ({why}, "
                        f"err={result.mean_error:.3f} m, "
@@ -177,7 +214,9 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
             continue
 
         n_matched += 1
-        last_motion = inverse(poses[-1]) @ T_new
+        motion_per_scan = inverse(pose_track) @ T_new
+        pose_track = T_new
+        skipped = 0
 
         # --- is this scan worth keeping as a keyframe? ----------------
         if not _keyframe_wanted(poses[-1], T_new,
@@ -255,9 +294,45 @@ def run_slam(db_path: str | Path, use_odom: bool = True,
     return SlamResult(poses=poses, scans=keys, edges=edges, grid=grid, stats=stats)
 
 
+def _match_with_search(pts_local: np.ndarray, submap: np.ndarray,
+                       field: LikelihoodField, T_pred: np.ndarray):
+    """Coarse pose search on the likelihood field, then ICP refine.
+
+    Used when there is no odometry: instead of trusting "the robot did not
+    move", score hundreds of candidate poses and refine the best few with ICP.
+    Returns (icp_result, pose) for the best candidate.
+    """
+    coarse = search_poses(pts_local, field, T_pred,
+                          window_xy=config.SEARCH_WINDOW_XY_M,
+                          window_deg=config.SEARCH_WINDOW_DEG,
+                          step_xy=config.SEARCH_STEP_XY_M,
+                          step_deg=config.SEARCH_STEP_DEG,
+                          top_k=config.SEARCH_TOP_K)
+
+    best = None
+    for _, pose in coarse:
+        fine = search_poses(pts_local, field, pose,
+                            window_xy=config.SEARCH_FINE_WINDOW_XY_M,
+                            window_deg=config.SEARCH_FINE_WINDOW_DEG,
+                            step_xy=config.SEARCH_FINE_STEP_XY_M,
+                            step_deg=config.SEARCH_FINE_STEP_DEG,
+                            top_k=1)
+        init = fine[0][1] if fine else pose
+        result = icp(pts_local, submap, T_init=init)
+        # rank by residual, with a penalty for poor overlap
+        rank = result.mean_error + 0.3 * max(0.0, 1.0 - result.inlier_fraction)
+        if best is None or rank < best[0]:
+            best = (rank, result, result.transform)
+    if best is None:                              # field unusable
+        result = icp(pts_local, submap, T_init=T_pred)
+        return result, result.transform
+    return best[1], best[2]
+
+
 def _accept_match(result, T_guess: np.ndarray, T_new: np.ndarray,
                   max_error: float | None = None,
-                  min_inliers: float | None = None) -> tuple[bool, str]:
+                  min_inliers: float | None = None,
+                  max_correction: float | None = None) -> tuple[bool, str]:
     """Three cheap sanity checks before a match is trusted."""
     max_error = config.ICP_ACCEPT_ERROR_M if max_error is None else max_error
     min_inliers = (config.ICP_ACCEPT_INLIER_FRACTION
@@ -270,7 +345,8 @@ def _accept_match(result, T_guess: np.ndarray, T_new: np.ndarray,
         return False, f"only {result.inlier_fraction:.0%} inliers"
     moved = float(np.linalg.norm(translation(T_new) - translation(T_guess)))
     turned = abs(angle_diff(heading(T_new), heading(T_guess)))
-    if moved > config.ICP_MAX_CORRECTION_M:
+    limit = config.ICP_MAX_CORRECTION_M if max_correction is None else max_correction
+    if moved > limit:
         return False, f"jumped {moved:.2f} m"
     if turned > math.radians(config.ICP_MAX_CORRECTION_DEG):
         return False, f"turned {math.degrees(turned):.0f} deg"

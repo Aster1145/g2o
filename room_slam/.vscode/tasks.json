@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "make demo data",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m slam2d.simulate_room --out data/demo.db",
+      "windows": { "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe -m slam2d.simulate_room --out data/demo.db" },
+      "linux": { "command": "${workspaceFolder}/.venv/bin/python -m slam2d.simulate_room --out data/demo.db" },
+      "osx": { "command": "${workspaceFolder}/.venv/bin/python -m slam2d.simulate_room --out data/demo.db" },
+      "problemMatcher": []
+    },
+    {
+      "label": "python tests",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m unittest discover -s unit_test -v",
+      "windows": { "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe -m unittest discover -s unit_test -v" },
+      "linux": { "command": "${workspaceFolder}/.venv/bin/python -m unittest discover -s unit_test -v" },
+      "osx": { "command": "${workspaceFolder}/.venv/bin/python -m unittest discover -s unit_test -v" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1. Lidar check (COM8, ASCII view)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.record_lidar_usb",
+      "args": ["--port", "COM8", "--preview"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "2. Record walk (COM8 -> data/room.db)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.record_lidar_usb",
+      "args": ["--port", "COM8", "--db", "data/room.db"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "3. Build map from recording",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.run_slam",
+      "args": ["--db", "data/room.db", "--name", "room"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "4. Demo, no hardware",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.run_slam",
+      "args": ["--db", "data/demo.db", "--name", "demo"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "make demo data"
+    },
+    {
+      "name": "5. List serial ports",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.record_lidar_usb",
+      "args": ["--list-ports"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "6. Database summary",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "slam2d.dbquery",
+      "args": ["--db", "data/room.db", "--summary"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

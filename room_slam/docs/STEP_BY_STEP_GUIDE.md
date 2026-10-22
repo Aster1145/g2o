@@ -6,6 +6,11 @@ whether to continue or stop and fix something.
 
 Total time: about one evening, of which 20 minutes is waiting for installs.
 
+> **No ESP32?** If you plug the lidar's own USB adapter into the laptop you can
+> skip sections 4-7 (wiring, flashing, network). Use
+> [`VSCODE_GUIDE.md`](VSCODE_GUIDE.md) instead for the setup, then come back here
+> for the driving rules (section 8) and map reading (section 9).
+
 ---
 
 ## 0. First, the picture

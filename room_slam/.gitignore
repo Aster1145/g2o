@@ -17,3 +17,8 @@ __pycache__/
 firmware/**/.pio/
 firmware/**/build/
 *.bin
+
+# This folder ships ready-made VS Code run configurations.  The g2o root
+# .gitignore excludes .vscode globally, so re-include ours here.
+!.vscode/
+!.vscode/**

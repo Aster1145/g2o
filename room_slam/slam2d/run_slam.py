@@ -33,7 +33,10 @@ def main(argv=None) -> int:
     ap.add_argument("--max-scans", type=int, default=None,
                     help="only use the first N scans (quick experiments)")
     ap.add_argument("--no-odom", action="store_true",
-                    help="ignore wheel odometry, use scan matching only")
+                    help="ignore wheel odometry (implied when there is none)")
+    ap.add_argument("--no-search", action="store_true",
+                    help="disable the pose search used when there is no "
+                         "odometry (faster, but tracking will be poor)")
     ap.add_argument("--no-loops", action="store_true", help="disable loop closure")
     ap.add_argument("--no-optimize", action="store_true",
                     help="skip g2o, just use the scan-matching chain")
@@ -53,6 +56,7 @@ def main(argv=None) -> int:
 
     print(f"SLAM on {db}")
     result = run_slam(db, use_odom=not args.no_odom,
+                      search=not args.no_search,
                       max_scans=args.max_scans,
                       loop_closure=not args.no_loops,
                       optimize_graph=not args.no_optimize,

@@ -13,6 +13,25 @@ next pose by repeating the last measured motion (`last_motion`). That assumption
 is excellent for a robot driving smoothly and terrible for a robot that jerks or
 spins on the spot.
 
+## How it actually works without odometry
+
+`USE_SEARCH_WHEN_NO_ODOM = True` in `slam2d/config.py` enables the
+likelihood-field pose search (`slam2d/likelihood.py`). Instead of assuming "the
+robot kept its velocity", every sweep is scored against hundreds of candidate
+poses on a distance-to-map field, and the best few are refined with ICP.
+
+Measured on the simulated room (160 sweeps, 14.4 m lap):
+
+| | keyframes | loop closures | mean pose error |
+| --- | --- | --- | --- |
+| with odometry | 97 | 4 | 3.7 cm |
+| **without odometry, search on** | 100 | 4 | **1.8 cm** |
+| without odometry, search off | 22 | 0 | 40 cm |
+
+It is slower (~0.4 s per sweep, so a 300-sweep room takes ~2 minutes) but it
+does not need any prior. `--no-search` disables it if you want speed over
+accuracy.
+
 ## How to drive without encoders
 
 | Do | Don't |

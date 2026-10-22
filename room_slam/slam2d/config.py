@@ -94,3 +94,22 @@ KEYFRAME_MIN_ROT_RAD = 0.10      # ... or turning this much (~6 deg)
 SUBMAP_NUM_KEYFRAMES = 15        # recent keyframes used for scan matching
 SUBMAP_RADIUS_M = 6.0            # crop the matching cloud to this radius
 LOOP_SUBMAP_RADIUS_M = 4.0
+
+# --------------------------------------------------------------------------
+# Pose search (used when there is no odometry to predict the next pose)
+# --------------------------------------------------------------------------
+# Without wheel odometry there is no motion prior, so before ICP we search a
+# small window of candidate poses on a likelihood field (see likelihood.py).
+USE_SEARCH_WHEN_NO_ODOM = True
+
+SEARCH_CELL_M = 0.02          # likelihood field resolution
+SEARCH_SIGMA_M = 0.05         # score falls off over roughly this distance
+SEARCH_STEP_XY_M = 0.10       # coarse search step ...
+SEARCH_STEP_DEG = 3.0         # ... and headings
+SEARCH_WINDOW_XY_M = 0.50     # how far the robot may have moved per sweep
+SEARCH_WINDOW_DEG = 25.0
+SEARCH_FINE_STEP_XY_M = 0.025 # second pass around the coarse winner
+SEARCH_FINE_STEP_DEG = 1.0
+SEARCH_FINE_WINDOW_XY_M = 0.12
+SEARCH_FINE_WINDOW_DEG = 5.0
+SEARCH_TOP_K = 3              # candidates refined with ICP

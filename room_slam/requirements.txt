@@ -2,7 +2,8 @@
 numpy>=1.24,<3
 scipy>=1.10            # fast nearest neighbour search for scan matching
 matplotlib>=3.6        # only used to draw the PNG map
-pyserial>=3.5          # only if you record over USB instead of WiFi
+pyserial>=3.5          # serial port access (USB lidar, or USB recording)
+rplidar>=0.9.2         # Slamtec SDK: USB lidar on COM8 with no ESP32
 
 # Pose graph optimisation with g2o.
 # NOTE: the current g2o-python wheels are built against numpy 1.x and crash

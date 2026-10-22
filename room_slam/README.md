@@ -37,7 +37,27 @@ python -m slam2d.run_slam --db data/demo.db --name demo
 
 That is the same output your robot will produce.
 
-## With the robot
+## Two ways to run it
+
+### A. Lidar straight into USB — no ESP32, no WiFi (quickest)
+
+```bash
+pip install -r requirements.txt            # includes the Slamtec SDK
+python -m slam2d.record_lidar_usb --list-ports        # find COM8
+python -m slam2d.record_lidar_usb --port COM8 --preview   # ASCII room check
+python -m slam2d.record_lidar_usb --port COM8 --db data/room.db   # drive, Ctrl-C
+python -m slam2d.run_slam --db data/room.db --name room --show
+```
+
+A USB lidar gives no wheel odometry, so the pipeline automatically uses a
+likelihood-field pose search (`slam2d/likelihood.py`) instead of a motion
+prediction. It costs ~0.4 s per sweep and produces a good map without encoders
+(3.2 cm mean pose error on the simulated lap).
+
+**VS Code users:** see [`docs/VSCODE_GUIDE.md`](docs/VSCODE_GUIDE.md) — the
+folder ships ready-made `.vscode/launch.json` configurations for every step.
+
+### B. Over WiFi with an ESP32
 
 ```bash
 # 1. flash firmware/esp32_rplidar_bridge (set WiFi + your laptop IP first)
@@ -65,7 +85,9 @@ python -m slam2d.check_stream --seconds 15
 | `slam2d/graph.py` | pose graph: g2o `EDGE_SE2` + a numpy fallback solver |
 | `slam2d/occupancy_map.py` | log-odds grid, PNG/GUI drawing |
 | `slam2d/slam.py` | the pipeline: keyframes → submaps → loops → optimise → render |
-| `slam2d/record.py` | TCP/serial receiver that writes SQLite |
+| `slam2d/record.py` | TCP/serial receiver that writes SQLite (ESP32 path) |
+| `slam2d/record_lidar_usb.py` | records a lidar on a USB/COM port (no ESP32) |
+| `slam2d/likelihood.py` | pose search used when there is no odometry |
 | `slam2d/replay.py` | fakes the ESP32 so you can test the network offline |
 | `slam2d/check_stream.py` | live stream stats + ASCII view |
 | `slam2d/simulate_room.py` | simulated room with drifting odometry |
@@ -111,6 +133,8 @@ make record      # listen for the ESP32, write data/room.db
 make live        # record and refresh maps/live/live.png every 60 sweeps
 make map         # SLAM on data/room.db
 make check       # live stream stats + ASCII room view
+make usb PORT=COM8        # record from a USB lidar
+make usb-check PORT=COM8  # look at the USB lidar only
 make test        # python unit tests
 make test-cpp    # compile + run the lidar parser test on this PC
 ```

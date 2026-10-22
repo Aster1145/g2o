@@ -198,6 +198,109 @@ class TestPoseGraph(unittest.TestCase):
         self.assertTrue(any(line.startswith("EDGE_SE2 0 1") for line in text))
 
 
+class TestUsbRecorder(unittest.TestCase):
+    """The COM-port path must produce exactly the same kind of Scan."""
+
+    def test_measurments_to_scan_bins_and_keeps_nearest(self):
+        from slam2d.record_lidar_usb import measurments_to_scan
+
+        meas = [(47, 0.0, 2000), (47, 0.0, 1200),   # same bearing: keep nearest
+                (20, 90.0, 500), (20, 180.0, 0),    # zero distance = no return
+                (20, 270.0, 30000)]                 # 30 m > MAX_RANGE: dropped
+        scan = measurments_to_scan(meas, bins=360)
+        self.assertEqual(len(scan.ranges), 360)
+        self.assertEqual(len(scan.angles), 360)
+        self.assertAlmostEqual(float(scan.ranges[0]), 1.2)      # nearest wins
+        self.assertAlmostEqual(float(scan.ranges[90]), 0.5)
+        self.assertEqual(scan.ranges[180], 0.0)                 # no return
+        self.assertEqual(scan.ranges[270], 0.0)                 # out of range
+        self.assertAlmostEqual(float(scan.angles[90]), math.pi / 2, places=6)
+
+    def test_record_writes_the_database(self):
+        from slam2d.record_lidar_usb import record
+
+        class FakeLidar:
+            """Stands in for rplidar.RPLidar: yields SDK-style measure tuples."""
+
+            def __init__(self, n=6):
+                self.n = n
+
+            def iter_scans(self, min_len=5):
+                for k in range(self.n):
+                    yield [(47, a * 1.0, int((2000 + 10 * a) * 1.0))
+                           for a in range(360)]
+
+        with tempfile.TemporaryDirectory() as d:
+            db = Path(d) / "usb.db"
+            n, _ = record(FakeLidar(6), db, bins=360)
+            self.assertEqual(n, 6)
+            conn = connect(db, read_only=True)
+            self.assertEqual(stats(conn)["scans"], 6)
+            got = fetch_scans(conn)[0]
+            self.assertEqual(len(got.ranges), 360)
+            self.assertTrue(np.all(got.ranges > 0))
+            conn.close()
+
+
+class TestLikelihoodSearch(unittest.TestCase):
+    """The no-odometry search must find a pose without a motion prior."""
+
+    @staticmethod
+    def room_cloud(n=600, seed=1):
+        rng = np.random.default_rng(seed)
+        pts = []
+        for _ in range(n // 4):
+            pts.append((rng.uniform(0, 6), 0.0))
+            pts.append((rng.uniform(0, 6), 5.0))
+            pts.append((0.0, rng.uniform(0, 5)))
+            pts.append((6.0, rng.uniform(0, 5)))
+        return np.asarray(pts)
+
+    def test_field_scores_map_points_highly(self):
+        from slam2d.likelihood import LikelihoodField
+
+        cloud = self.room_cloud()
+        field = LikelihoodField.from_points(cloud)
+        self.assertIsNotNone(field)
+        self.assertGreater(field.score(cloud), 0.9)
+        far = cloud + np.array([40.0, 40.0])
+        self.assertLess(field.score(far), 0.2)
+
+    def test_search_recovers_a_large_offset(self):
+        """A 30 cm / 12 deg offset is far beyond ICP's capture range."""
+        from slam2d.likelihood import LikelihoodField, search_poses
+        from slam2d.geometry import se2, transform_points
+
+        world = self.room_cloud()
+        truth = se2(0.31, -0.27, math.radians(12.0))
+        # the scan as seen from `truth`, but we only know "roughly here"
+        scan = transform_points(inverse(truth), world)
+        field = LikelihoodField.from_points(world)
+        guess = se2(0.0, 0.0, 0.0)
+
+        cands = search_poses(scan, field, guess, window_xy=0.5, window_deg=25.0,
+                             step_xy=0.10, step_deg=3.0, top_k=3)
+        self.assertTrue(cands)
+        best = cands[0][1]
+        err = np.linalg.norm(translation(best) - translation(truth))
+        self.assertLess(err, 0.15)              # coarse grid is 10 cm
+
+
+class TestNoOdomPipeline(unittest.TestCase):
+    def test_map_built_without_any_odometry(self):
+        from slam2d.simulate_room import write_demo_scan
+        from slam2d.slam import run_slam
+
+        with tempfile.TemporaryDirectory() as d:
+            db = write_demo_scan(Path(d) / "demo.db", n_scans=110, n_beams=240)
+            res = run_slam(db, use_odom=False, verbose=False)
+            self.assertGreater(res.stats["keyframes"], 25)
+            self.assertGreaterEqual(res.stats["loops"], 1)
+            self.assertLess(res.stats["rejected"], 10)
+            # the estimated path must be close to the true loop length (~14 m)
+            self.assertGreater(res.stats["path_length_m"], 10.0)
+
+
 class TestEndToEnd(unittest.TestCase):
     """Generate a small simulated recording and map it."""
 
